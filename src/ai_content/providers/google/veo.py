@@ -74,7 +74,7 @@ class GoogleVeoProvider:
         first_frame_url: str | None = None,
         output_path: str | None = None,
         use_fast_model: bool = False,
-        person_generation: str = "allow_adult",
+        person_generation: str | None = None,
     ) -> GenerationResult:
         """
         Generate video using Veo 3.1.
@@ -102,19 +102,42 @@ class GoogleVeoProvider:
         logger.debug(f"   Prompt: {prompt[:50]}...")
         logger.debug(f"   Model: {model}")
 
+        def _is_rate_limit_error(exc: Exception) -> bool:
+            code = getattr(exc, "code", None)
+            if code == 429:
+                return True
+            message = str(exc)
+            return "RESOURCE_EXHAUSTED" in message or "429" in message
+
+        async def _generate_with_retry(**kwargs):
+            max_attempts = 3
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    return await client.aio.models.generate_videos(**kwargs)
+                except Exception as e:
+                    if _is_rate_limit_error(e) and attempt < max_attempts:
+                        delay = min(2 ** (attempt - 1), 30)
+                        logger.warning(
+                            f"Rate limit hit. Retrying in {delay}s "
+                            f"(attempt {attempt}/{max_attempts})..."
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    raise
+
         try:
             # Build config
-            config = types.GenerateVideoConfig(
-                aspect_ratio=aspect_ratio,
-                person_generation=person_generation,
-            )
+            config_kwargs = {"aspect_ratio": aspect_ratio}
+            if person_generation is not None:
+                config_kwargs["person_generation"] = person_generation
+            config = types.GenerateVideosConfig(**config_kwargs)
 
             # Generate
             if first_frame_url:
                 # Image-to-video
                 image_data = await self._fetch_image(first_frame_url)
                 image = types.Image(image_bytes=image_data)
-                operation = await client.aio.models.generate_video(
+                operation = await _generate_with_retry(
                     model=model,
                     prompt=prompt,
                     image=image,
@@ -122,7 +145,7 @@ class GoogleVeoProvider:
                 )
             else:
                 # Text-to-video
-                operation = await client.aio.models.generate_video(
+                operation = await _generate_with_retry(
                     model=model,
                     prompt=prompt,
                     config=config,
@@ -134,7 +157,8 @@ class GoogleVeoProvider:
                 await asyncio.sleep(5)
                 operation = await client.aio.operations.get(operation)
 
-            if not operation.response or not operation.response.generated_videos:
+            response = operation.response or operation.result
+            if not response or not response.generated_videos:
                 return GenerationResult(
                     success=False,
                     provider=self.name,
@@ -143,7 +167,7 @@ class GoogleVeoProvider:
                 )
 
             # Get video data
-            video = operation.response.generated_videos[0]
+            video = response.generated_videos[0]
             video_data = video.video.video_bytes
 
             # Save

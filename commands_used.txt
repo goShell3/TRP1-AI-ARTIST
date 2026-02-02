@@ -1,0 +1,9 @@
+uv run ai-content music --style jazz --provider lyria --duration 30 --prompt "Epic cinematic music inspired by Avengers Endgame final battle"
+
+## result exports\lyria_20260202_133209.wav
+
+uv run ai-content video --style fantasy --provider veo --duration 10 --prompt "Epic Avengers Endgame battle scene, cinematic visual style"
+
+
+## generate music using prompts 
+uv run ai-content music --prompt "Epic cinematic song inspired by Avengers Endgame" --provider minimax --lyrics avengers_lyrics.txt --duration 30

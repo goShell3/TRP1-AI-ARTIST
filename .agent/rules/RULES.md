@@ -50,7 +50,8 @@ class MyMusicProvider:
     ...
 
 # ❌ Wrong - Manual registration
-ProviderRegistry._music_providers["my_provider"] = MyMusicProvider
+ProviderRegistry._music_prov
+iders["my_provider"] = MyMusicProvider
 ```
 
 ### 4. Result Objects Over Exceptions
